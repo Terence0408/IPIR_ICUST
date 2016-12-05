@@ -1,0 +1,2164 @@
+---
+title: "Mortality Modelling in MIMIC 3"
+author: "Terence"
+date: "2016/8/1"
+output:
+  html_document:
+    fig_height: 3
+    fig_width: 5
+    highlight: zenburn
+    number_sections: yes
+    theme: journal
+    toc: yes
+---
+<style type="text/css">
+.tg  {border-collapse:collapse;border-spacing:0;border-color:#bbb;}
+
+.tg td{font-family:Arial, sans-serif;font-size:14px;padding:0px 7px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:#bbb;color:#594F4F;background-color:#E0F2F1; border:#9E9E9E 1px solid}
+
+.tg th{font-family:Arial, sans-serif;font-size:14px;font-weight:normal;padding:0px 7px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:#bbb;color:#493F3F;background-color:#26A69A;border:#9E9E9E 1px solid}
+
+
+
+.tg .tg-hd01{background-color:#26A69A;font-weight:bold;font-size:18px;text-align:center;vertical-align:center}
+.tg .tg-hd02{background-color:#26A69A;font-weight:bold;font-size:18px;text-align:left;vertical-align:center}
+
+
+.tg .tg-ce01{background-color:#E0F2F1;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-ce02{background-color:#E0F2F1;font-size:12px;text-align:left;vertical-align:center}
+
+.tg .tg-ce11{background-color:#B2DFDB;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-ce12{background-color:#B2DFDB;font-size:12px;text-align:left;vertical-align:center}
+
+.tg .tg-ce21{background-color:#80CBC4;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-ce22{background-color:#80CBC4;font-size:12px;text-align:left;vertical-align:center}
+
+.tg .tg-ce31{background-color:#4DB6AC;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-ce32{background-color:#4DB6AC;font-size:12px;text-align:left;vertical-align:center}
+
+.tg .tg-ce41{background-color:#26A69A;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-ce42{background-color:#26A69A;font-size:12px;text-align:left;vertical-align:center}
+
+.tg .tg-ce51{background-color:#009688;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-ce52{background-color:#009688;font-size:12px;text-align:left;vertical-align:center}
+
+.tg .tg-ce61{background-color:#00897B;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-ce62{background-color:#00897B;font-size:12px;text-align:left;vertical-align:center}
+
+.tg .tg-ce71{background-color:#00796B;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-ce72{background-color:#00796B;font-size:12px;text-align:left;vertical-align:center}
+
+.tg .tg-ce81{background-color:#00695C;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-ce82{background-color:#00695C;font-size:12px;text-align:left;vertical-align:center}
+
+.tg .tg-ce91{background-color:#004D40;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-ce92{background-color:#004D40;font-size:12px;text-align:left;vertical-align:center}
+
+.tg .tg-vs11{background-color:#A7FFEB;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-vs12{background-color:#A7FFEB;font-size:12px;text-align:left;vertical-align:center}
+
+.tg .tg-vs21{background-color:#64FFDA;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-vs22{background-color:#64FFDA;font-size:12px;text-align:left;vertical-align:center}
+
+.tg .tg-vs41{background-color:#1DE9B6;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-vs42{background-color:#1DE9B6;font-size:12px;text-align:left;vertical-align:center}
+
+.tg .tg-vs71{background-color:#00BFA5;font-size:12px;text-align:center;vertical-align:center}
+.tg .tg-vs72{background-color:#00BFA5;font-size:12px;text-align:left;vertical-align:center}
+
+
+</style>
+
+
+#Goal
+Base on thesis "Unfolding Physiological State: Mortality Modelling in Intensive Care Units" analysis process to predict mortality in MIMIC III (Medical Information Mart for Intensive Care III). Thesis were predict mortality in MIMIC II.
+
+Extracted and derived 36 structured clinical variables for each patient: the age, gender, SAPS II score
+on admission, minimum SAPS II score, maximum SAPS II score, final SAPS II score, and the 30 EH comorbidities.
+Data were scaled to avoid the range of a feature impacting its classification importance.  
+
+Extracted all clinical notes recorded prior to the patient's first discharge, including notes from nursing, physicians, labs, and radiology. The discharge summaries themselves were excluded because they typically stated the patient's outcome explicitly.
+
+Using linear kernel SVM to create classification boundaries with combinations of the structured clinical features and latent topic features to predict in-hospital mortality, 30 day post-discharge mortality, and 1 year post-discharge mortality.
+
+```{r fig.width=10, fig.height=5,echo=FALSE}
+library(png)
+library(grid)
+img <- readPNG("D:\\Develop_code\\IPIR\\Text_LDA\\2_Slide\\picture\\Mortality Modelling in MIMIC 3.PNG")
+grid.raster(img)
+```
+
+
+
+#Structured clinical variables
+
+##Outcomes
+>
+>Predict in-hospital mortality, 30 day post-discharge mortality, and 1 year post-discharge mortality.  
+>Patient mortality outcomes were also queried to determine which patients died in-hospital, or lived past the most recent query of Social Security records.
+
+###In-hospital mortality
+- In-hospital mortality information can reference column deathtime in table admissions.
+
+###Post-discharge mortality
+- We consider 30 day post-discharge mortality and 1 year post-discharge mortality.
+- Post-discharge mortality information can reference column dob in table patients.
+
+
+
+##Features
+>We extracted and derived 36 structured clinical variables for each patient: the age, gender, SAPS II score
+on admission, minimum SAPS II score, maximum SAPS II score, final SAPS II score, and the 30 EH comorbidities.
+
+###Admission age
+- Age information can reference differ from column admittime in table admittime and column dob in table patients.  
+If differ are large than 300 then minus 210.
+
+###Gender
+- Gender information can reference column gender in table patients.
+
+###SAPS II index  
+- Simplified Acute Physiology Score (SAPS II) is a severity of disease classification system. SAPS II was designed to measure the severity of disease for patients admitted to Intensive care units aged 15 or more. 24 hours after admission to the ICU, the measurement has been completed and resulted in an integer point score between 0 and 163 and a predicted mortality between 0% and 100%. No new score can be calculated during the stay. If a patient is discharged from the ICU and readmitted, a new SAPS II score can be calculated.  
+
+- SAPS II score on admission, minimum SAPS II score, maximum SAPS II score, final SAPS II score
+    - SAPS II information can reference [sapsii.sql](https://github.com/MIT-LCP/mimic-code/blob/master/severityscores/sapsii.sql) on github MIT-LCP.
+    - And below code.
+    ```sql
+    CREATE TABLE sapsii_use AS
+        WITH sapsii_valid AS (
+            WITH dem AS (
+                SELECT subject_id, hadm_id, 
+                    CASE WHEN deathtime IS NULL THEN dischtime ELSE deathtime END AS leavetime
+                FROM admissions
+                ),
+            icu AS(
+                SELECT icu.subject_id, icu.hadm_id, icu.icustay_id, icu.intime, saps.sapsii
+                FROM public.icustays as icu left join w10403323.sapsii as saps 
+                    on icu.subject_id = saps.subject_id 
+                    and icu.hadm_id = saps.hadm_id 
+                    and icu.icustay_id = saps.icustay_id
+                )
+            Select icu.subject_id, icu.hadm_id, icu.intime, icu.sapsii
+            FROM icu left join dem on icu.subject_id = dem.subject_id and icu.hadm_id = dem.hadm_id
+            WHERE icu.intime <= dem.leavetime
+            ),  
+            
+            sapsii_first AS (
+                WITH first_sapsii_temp AS (
+                    Select subject_id, hadm_id, min(intime) as min_time
+                    FROM sapsii_valid
+                    GROUP BY subject_id, hadm_id
+                    )
+            SELECT val.subject_id, val.hadm_id, val.sapsii as first_sapsii
+            FROM sapsii_valid as val right join first_sapsii_temp as tmp 
+                on val.subject_id = tmp.subject_id 
+                and val.hadm_id = tmp.hadm_id 
+                and val.intime = tmp.min_time
+            ),
+            sapsii_final AS (
+                WITH final_sapsii_temp AS (
+                    Select subject_id, hadm_id, max(intime) as max_time
+                    FROM sapsii_valid
+                    GROUP BY subject_id, hadm_id
+                    )
+                SELECT val.subject_id, val.hadm_id, val.sapsii as final_sapsii
+                FROM sapsii_valid as val right join final_sapsii_temp as tmp 
+                    on val.subject_id = tmp.subject_id 
+                    and val.hadm_id = tmp.hadm_id 
+                    and val.intime = tmp.max_time
+                ),
+            sapsii_duration AS (
+                SELECT subject_id, hadm_id, max(sapsii) as max_sapsii,  min(sapsii) as min_sapsii
+                FROM sapsii_valid
+                GROUP BY subject_id, hadm_id
+                )
+    SELECT a.subject_id, a.hadm_id, a.max_sapsii, a.min_sapsii, b.first_sapsii, c.final_sapsii
+    FROM sapsii_duration as a 
+            LEFT JOIN sapsii_first as b on a.subject_id = b.subject_id and a.hadm_id = b.hadm_id
+            LEFT JOIN sapsii_final as c on a.subject_id = c.subject_id and a.hadm_id = c.hadm_id;
+    ```  
+
+###EH comorbidities  
+- The Elixhauser Comorbidity Index (EH comorbidities) is a method for measuring patient comorbidity based on ICD-9-CM and ICD-10 diagnosis codes found in administrative data. This instrument is meant to be used with large administrative data sets to predict hospital resource use and in-hospital mortality (Elixhauser et al., 1998).  
+    - 30 EH comorbidities information can reference can reference [elixhauser-ahrq-v37-with-drg.sql](https://github.com/MIT-LCP/mimic-code/blob/master/comorbidity/postgres/elixhauser-ahrq-v37-with-drg.sql) on github MIT-LCP.
+    
+
+##Descriptive statistics 
+###Demographic  
+- \Table Table: demographic  
+
+    | Name                 |      Type | Description                                        | Remark          |
+    |:----------------|:---------|:---------------------------|:-------------------| 
+    | subject_id           | integer   | Patient ID                                         |                 |
+    | hadm_id              | integer   | Admission ID                                       |                 |
+    | gender               | character | Gender                                             |                 |
+    | age                  | double    | Admission age                                      |                 |
+    | admittime            | timestamp | Admission time                                     | From admissions |
+    | dischtime            | timestamp | Discharge time                                     | From admissions |
+    | deathtime            | timestamp | Death time                                         | From admissions |
+    | hospital_expire_flag | smallint  | Index patient died within the hospital             | From admissions |
+    | dob                  | timestamp | Date of birth                                      | From patients   |
+    | dod                  | timestamp | Date of death                                      | From patients   |
+    | dod_hosp             | timestamp | Date of death as recorded in the hospital database | From patients   |
+    | dod_ssn              | timestamp | Date of death from the social security database    | From patients   |
+    | expire_flag          | integer   | Date of death from the social security database    | From patients   |
+    |                      |           |                                                    |                 |
+    
+    ```{mysql, eval=FALSE}
+    CREATE TABLE demographic AS
+    SELECT ad.subject_id,ad.hadm_id,dp.gender,
+        CASE WHEN date_part('year',age(ad.admittime, dp.dob))>=300 
+            THEN date_part('year',age(ad.admittime, dp.dob))-210
+            ELSE date_part('year',age(ad.admittime, dp.dob)) END AS age, 
+        ad.admittime,ad.dischtime, ad.deathtime,ad.hospital_expire_flag,
+        dp.dob, dp.dod, dp.dod_hosp, dp.dod_ssn, dp.expire_flag
+    FROM admissions ad, patients dp 
+    WHERE ad.subject_id = dp.subject_id
+    ORDER BY ad.subject_id, ad.admittime
+    ```
+    
+###Cohort selection  
+- Cohort selection
+    ```{r fig.width=10, fig.height=5,echo=FALSE}
+    library(png)
+    library(grid)
+    img <- readPNG("D:\\Develop_code\\IPIR\\Text_LDA\\2_Slide\\picture\\flow chart_1.PNG")
+     grid.raster(img)
+    ```
+
+    | Population                    | Admission | Patient | Note    |        | Remark          |
+    |:----------------|------:|------:|------:|------:|:-----------------------|
+    | MIMIC v3.1                    | 58976     |  46520  |         |        |                 |
+    | Adult admission               | 50765     |  38551  |         |        | Exclude admission age < 18 |
+    | With severity and comorbidity | 49615     |  38440  | 1413459 |        | Exclude no spas ii score or no EH comorbidity |
+    |                               |           |         |         |        |                 |
+
+
+    
+    
+###Aggregation outcome and structured features  
+- \Table Table: aggregate_matrix  
+
+    | Name                 |      Type | Description                                        | Remark          |
+    |:----------------|:---------|:---------------------------|:-------------------| 
+    | subject_id                  | integer   | Patient ID                                |                    |
+    | hadm_id                     | integer   | Admission ID                              |                    |
+    | train                       | integer   | Label this patient is in train set or not | 1: train, 0: test  |
+    | admittime                   | timestamp | Admission time                            |                    |
+    | dischtime                   | timestamp | Discharge time                            |                    |
+    | staytime                    | double    | Duration time                             | Hour               |
+    | death_inhosp                | integer   | In-hospital mortality                     | 1: death, 0: alive |
+    | death_30                    | integer   | 30 day post-discharge mortality           | 1: death, 0: alive |
+    | death_1year                 | integer   | 1 year post-discharge mortality           | 1: death, 0: alive |
+    | age                         | double    | Admission age                             | Year               |
+    | gender                      | character | Gender                                    | M/F                |
+    | first_sapsii                | integer   | SAPS II score on admission                |                    |
+    | min_sapsii                  | integer   | Minimum SAPS II score                     |                    |
+    | max_sapsii                  | integer   | Maximum SAPS II score                     |                    |
+    | final_sapsii                | integer   | Final SAPS II score                       |                    |
+    | eh_congestive_heart_failure | integer   | EH comorbiditie: congestive heart failure | 1: disease, 0: no  |
+    | eh_cardiac_arrhythmias      | integer   | EH comorbiditie: cardiac arrhythmias      | 1: disease, 0: no  |
+    | eh_valvular_disease         | integer   | EH comorbiditie: valvular disease         | 1: disease, 0: no  |
+    | eh_pulmonary_circulation    | integer   | EH comorbiditie: pulmonary circulation    | 1: disease, 0: no  |
+    | eh_peripheral_vascular      | integer   | EH comorbiditie: peripheral vascular      | 1: disease, 0: no  |
+    | eh_hypertension             | integer   | EH comorbiditie: hypertension             | 1: disease, 0: no  |
+    | eh_paralysis                | integer   | EH comorbiditie: paralysis                | 1: disease, 0: no  |
+    | eh_other_neurological       | integer   | EH comorbiditie: other neurological       | 1: disease, 0: no  |
+    | eh_chronic_pulmonary        | integer   | EH comorbiditie: chronic pulmonary        | 1: disease, 0: no  |
+    | eh_diabetes_uncomplicated   | integer   | EH comorbiditie: diabetes uncomplicated   | 1: disease, 0: no  |
+    | eh_diabetes_complicated     | integer   | EH comorbiditie: diabetes complicated     | 1: disease, 0: no  |
+    | eh_hypothyroidism           | integer   | EH comorbiditie: hypothyroidism           | 1: disease, 0: no  |
+    | eh_renal_failure            | integer   | EH comorbiditie: renal failure            | 1: disease, 0: no  |
+    | eh_liver_disease            | integer   | EH comorbiditie: liver disease            | 1: disease, 0: no  |
+    | eh_peptic_ulcer             | integer   | EH comorbiditie: peptic ulcer             | 1: disease, 0: no  |
+    | eh_aids                     | integer   | EH comorbiditie: aids                     | 1: disease, 0: no  |
+    | eh_lymphoma                 | integer   | EH comorbiditie: lymphoma                 | 1: disease, 0: no  |
+    | eh_metastatic_cancer        | integer   | EH comorbiditie: metastatic cancer        | 1: disease, 0: no  |
+    | eh_solid_tumor              | integer   | EH comorbiditie: solid tumor              | 1: disease, 0: no  |
+    | eh_rheumatoid_arthritis     | integer   | EH comorbiditie: rheumatoid arthritis     | 1: disease, 0: no  |
+    | eh_coagulopathy             | integer   | EH comorbiditie: coagulopathy             | 1: disease, 0: no  |
+    | eh_obesity                  | integer   | EH comorbiditie: obesity                  | 1: disease, 0: no  |
+    | eh_weight_loss              | integer   | EH comorbiditie: weight loss              | 1: disease, 0: no  |
+    | eh_fluid_electrolyte        | integer   | EH comorbiditie: fluid electrolyte        | 1: disease, 0: no  |
+    | eh_blood_loss_anemia        | integer   | EH comorbiditie: blood loss anemia        | 1: disease, 0: no  |
+    | eh_deficiency_anemias       | integer   | EH comorbiditie: deficiency anemias       | 1: disease, 0: no  |
+    | eh_alcohol_abuse            | integer   | EH comorbiditie: alcohol abuse            | 1: disease, 0: no  |
+    | eh_drug_abuse               | integer   | EH comorbiditie: drug abuse               | 1: disease, 0: no  |
+    | eh_psychoses                | integer   | EH comorbiditie: psychoses                | 1: disease, 0: no  |
+    | eh_depression               | integer   | EH comorbiditie: depression               | 1: disease, 0: no  |
+    |                             |           |                                           |                    |
+
+    
+    ```{mysql, eval=FALSE}  
+    Create table aggregate_matrix as
+        WITH dem as(
+            Select dem.subject_id, dem.hadm_id,
+                dem.admittime, dem.dischtime, 
+                EXTRACT(DAY FROM (dem.dischtime - dem.admittime))*24 
+                    + EXTRACT(HOUR FROM (dem.dischtime - dem.admittime)) as staytime,
+                Case When dem.deathtime is not NULL THEN 1 else 0 end as death_inhosp,
+                Case When dem.deathtime is NULL and EXTRACT(DAY FROM (dem.dod - dem.admittime)) between 0 and 30 
+                    then 1 Else 0 end as death_30,
+                Case When dem.deathtime is NULL and EXTRACT(DAY FROM (dem.dod - dem.admittime)) between 0 and 30 
+                    then 0 
+                    When dem.deathtime is NULL and EXTRACT(DAY FROM (dem.dod - dem.admittime)) between 30 and 365 
+                    then 1 ELSE 0 end as death_1year,
+                dem.age, dem.gender, saps.first_sapsii, saps.min_sapsii, saps.max_sapsii, saps.final_sapsii
+            FROM demographic as dem inner join sapsii_use as saps 
+                on dem.subject_id =saps.subject_id and dem.hadm_id = saps.hadm_id
+            Where dem.age >= 18
+            )
+    Select dem.*,
+        eh.congestive_heart_failure as eh_congestive_heart_failure,
+        eh.cardiac_arrhythmias as eh_cardiac_arrhythmias,
+        eh.valvular_disease as eh_valvular_disease,
+        eh.pulmonary_circulation as eh_pulmonary_circulation,
+        eh.peripheral_vascular as eh_peripheral_vascular,
+        eh.hypertension as eh_hypertension,
+        eh.paralysis as eh_paralysis,
+        eh.other_neurological as eh_other_neurological,
+        eh.chronic_pulmonary as eh_chronic_pulmonary,
+        eh.diabetes_uncomplicated as eh_diabetes_uncomplicated,
+        eh.diabetes_complicated as eh_diabetes_complicated,
+        eh.hypothyroidism as eh_hypothyroidism,
+        eh.renal_failure as eh_renal_failure,
+        eh.liver_disease as eh_liver_disease,
+        eh.peptic_ulcer as eh_peptic_ulcer,
+        eh.aids as eh_aids,
+        eh.lymphoma as eh_lymphoma,
+        eh.metastatic_cancer as eh_metastatic_cancer,
+        eh.solid_tumor as eh_solid_tumor,
+        eh.rheumatoid_arthritis as eh_rheumatoid_arthritis,
+        eh.coagulopathy as eh_coagulopathy,
+        eh.obesity as eh_obesity,
+        eh.weight_loss as eh_weight_loss,
+        eh.fluid_electrolyte as eh_fluid_electrolyte,
+        eh.blood_loss_anemia as eh_blood_loss_anemia,
+        eh.deficiency_anemias as eh_deficiency_anemias,
+        eh.alcohol_abuse as eh_alcohol_abuse,
+        eh.drug_abuse AS eh_drug_abuse,
+        eh.psychoses AS eh_psychoses,
+        eh.depression AS eh_depression
+    FROM dem inner join elixhauser_ahrq AS eh on dem.subject_id =eh.subject_id and dem.hadm_id = eh.hadm_id
+```
+
+
+
+    
+###Basic descriptive statistics
+- Cohort basic description
+
+    |                                  |Male       |                   | Female    |                   || p value              |
+    |---------------|-----:|------------:|-----:|------------:|-|-----------:|
+    |**Total No.**                     | 27881     | 100.0%            | 21734     |100.0%             ||                      |
+    |                                  |           |                   |           |                   ||                      |
+    |**Age**                           | 62.27     | (62.15, 62.39)    | 65.20     |(65.07, 65.33)     || 0.000(t) / 0.000     |
+    |\ \ \ \  (18, 30]                 | 1427      | 5.12%             | 1064      | 4.90%             ||                      |
+    |\ \ \ \  (30, 40]                 | 1620      | 5.81%             | 1226      | 5.64%             ||                      |
+    |\ \ \ \  (40, 50]                 | 3431      | 12.31%            | 2249      | 10.35%            ||                      |
+    |\ \ \ \  (50, 60]                 | 5485      | 19.67%            | 3441      | 15.83%            ||                      |
+    |\ \ \ \  (60, 70]                 | 6210      | 22.27%            | 4105      | 18.89%            ||                      |
+    |\ \ \ \  (70, 80]                 | 5653      | 20.28%            | 4659      | 21.44%            ||                      |
+    |\ \ \ \ \ 81+                     | 4055      | 14.54%            | 4990      | 22.96%            ||                      |
+    |                                  |           |                   |           |                   ||                      |
+    |**Stay time**                     | 242.30    | (240.33, 244.28)  | 236.04    |(234.20, 237.88)   || 0.007(t) / 0.013     |
+    |\ \ \ \  [ 0, 12]                 | 378       | 1.36%             | 295       | 1.36%             ||                      |
+    |\ \ \ \  ( 12, 24]                | 624       | 2.24%             | 499       | 2.30%             ||                      |
+    |\ \ \ \  ( 24, 36]                | 463       | 1.66%             | 420       | 1.93%             ||                      |
+    |\ \ \ \  ( 36, 48]                | 977       | 3.50%             | 781       | 3.59%             ||                      |
+    |\ \ \ \  ( 48, 60]                | 753       | 2.70%             | 582       | 2.68%             ||                      |
+    |\ \ \ \  ( 60, 72]                | 1343      | 4.82%             | 1060      | 4.88%             ||                      |
+    |\ \ \ \  ( 72, 84]                | 1009      | 3.62%             | 767       | 3.53%             ||                      |
+    |\ \ \ \  ( 84, 96]                | 1333      | 4.78%             | 1134      | 5.22%             ||                      |
+    |\ \ \ \  ( 96, 108]               | 1358      | 4.87%             | 901       | 4.15%             ||                      |
+    |\ \ \ \  (108, 120]               | 1345      | 4.82%             | 1119      | 5.15%             ||                      |
+    |\ \ \ \  (120, 132]               | 1213      | 4.35%             | 892       | 4.10%             ||                      |
+    |\ \ \ \  (132, 144]               | 1284      | 4.61%             | 1033      | 4.75%             ||                      |
+    |\ \ \ \  (144, 156]               | 1021      | 3.66%             | 772       | 3.55%             ||                      |
+    |\ \ \ \  (156, 168]               | 1140      | 4.09%             | 922       | 4.24%             ||                      |
+    |\ \ \ \  (168, 180]               | 866       | 3.11%             | 670       | 3.08%             ||                      |
+    |\ \ \ \  (180, 192]               | 1033      | 3.71%             | 839       | 3.86%             ||                      |
+    |\ \ \ \  (192, 204]               | 700       | 2.51%             | 574       | 2.64%             ||                      |
+    |\ \ \ \  (204, 216]               | 833       | 2.99%             | 635       | 2.92%             ||                      |
+    |\ \ \ \  (216, 228]               | 576       | 2.07%             | 453       | 2.08%             ||                      |
+    |\ \ \ \  (228, 240]               | 721       | 2.59%             | 606       | 2.79%             ||                      |
+    |\ \ \ \  241+                     | 8911      | 31.96%            | 6780      | 31.20%            ||                      |
+    |                                  |           |                   |           |                   ||                      |
+    |**SAPS II**                       |           |                   |           |                   ||                      |
+    |\ \ \ \  First                    | 34.09     | (33.99, 34.20)    | 35.23     | (35.12, 35.33)    || 0.000(t)             |
+    |\ \ \ \  Minimum                  | 33.74     | (33.63, 33.84)    | 34.91     | (34.80, 35.01)    || 0.000(t)             |
+    |\ \ \ \  Maximum                  | 34.55     | (34.44, 34.66)    | 35.65     | (35.54, 35.76)    || 0.000(t)             |
+    |\ \ \ \  Final                    | 34.19     | (34.08, 34.30)    | 35.32     | (35.21, 35.43)    || 0.000(t)             |
+    |                                  |           |                   |           |                   ||                      |
+    | **EH comorbiditie**              |           |                   |           |                   ||                      |
+    |\ \ \ \ congestive heart failure  | 4018      | 14.41%    | 4033     |18.56%     || 0.000|
+    |\ \ \ \ cardiac arrhythmias       | 4854      | 17.41%    | 4036     |18.57%     || 0.001|
+    |\ \ \ \ valvular disease          | 1441      | 5.17%    | 1473     |6.78%     || 0.000|
+    |\ \ \ \ pulmonary circulation     | 938       | 3.36%    | 981     |4.51%     || 0.000|
+    |\ \ \ \ peripheral vascular       | 2532      | 9.08%    | 1748     |8.04%     || 0.000|
+    |\ \ \ \ hypertension              | 3587      | 12.87%    | 2367     |10.89%     || 0.000|
+    |\ \ \ \ paralysis                 | 818       | 2.93%    | 642     |2.95%     || 0.917|
+    |\ \ \ \ other neurological        | 2112      | 7.58%    | 1884     |8.67%     || 0.000|
+    |\ \ \ \ chronic pulmonary         | 4692      | 16.83%    | 4763     |21.91%     || 0.000|
+    |\ \ \ \ diabetes uncomplicated    | 5678      | 20.37%    | 4312     |19.84%     || 0.151|
+    |\ \ \ \ diabetes complicated      | 1859      | 6.67%    | 1424     |6.55%     || 0.620|
+    |\ \ \ \ hypothyroidism            | 1652      | 5.93%    | 3450     |15.87%     || 0.000|
+    |\ \ \ \ renal failure             | 4443      | 15.94%    | 2808     |12.92%     || 0.000|
+    |\ \ \ \ liver disease             | 2181      | 7.82%    | 1113     |5.12%     || 0.000|
+    |\ \ \ \ peptic ulcer              | 23        | 0.08%    | 21     |0.10%     || 0.709|
+    |\ \ \ \ aids                      | 198       | 0.71%    | 69     |0.32%     || 0.000|
+    |\ \ \ \ lymphoma                  | 425       | 1.52%    | 262     |1.21%     || 0.003|
+    |\ \ \ \ metastatic cancer         | 1145      | 4.11%    | 964     |4.44%     || 0.075|
+    |\ \ \ \ solid tumor               | 893       | 3.20%    | 446     |2.05%     || 0.000|
+    |\ \ \ \ rheumatoid arthritis      | 397       | 1.42%    | 1030     |4.74%     || 0.000|
+    |\ \ \ \ coagulopathy              | 3180      | 11.41%    | 2284     |10.51%     || 0.002|
+    |\ \ \ \ obesity                   | 1269      | 4.55%    | 1347     |6.20%     || 0.000|
+    |\ \ \ \ weight loss               | 1016      | 3.64%    | 822     |3.78%     || 0.433|
+    |\ \ \ \ fluid electrolyte         | 7674      | 27.52%    | 6963     |32.04%     || 0.000|
+    |\ \ \ \ blood loss anemia         | 504       | 1.81%    | 532     |2.45%     || 0.000|
+    |\ \ \ \ deficiency anemias        | 4687      | 16.81%    | 4703     |21.64%     || 0.000|
+    |\ \ \ \ alcohol abuse             | 2548      | 9.14%    | 828     |3.81%     || 0.000|
+    |\ \ \ \ drug abuse                | 1062      | 3.81%    | 543     |2.50%     || 0.000|
+    |\ \ \ \ psychoses                 | 986       | 3.54%    | 1051     |4.84%     || 0.000|
+    |\ \ \ \ depression                | 1991      | 7.14%    | 2530     |11.64%     || 0.000|
+    |                                  |           |                |           |                ||                      |
+    | **Mortality**                    |           |                |           |                ||                      |
+    |\ \ \ \ In-hospital               | 3033      | 10.88%    | 2631     |12.11%     || 0.000|
+    |\ \ \ \ 30 day post-discharge     | 837       | 3.00%    | 716     |3.29%     || 0.067|
+    |\ \ \ \ 1 year post-discharge     | 3620      | 12.98%    | 2943     |13.54%     || 0.071|
+    |                                  |           |                   |           |                   ||                      |
+  
+
+#Unstructured clinical notes
+>*We extracted all clinical notes recorded prior to the patient's first discharge, including notes from nursing, physicians, labs, and radiology. The discharge summaries themselves were excluded because they typically stated the patient's outcome explicitly.*  
+  
+##Excluded definition
+>*Patients were excluded if they had fewer than 100 non-stop words or were under the age of 18. Specific notes were excluded if they occurred after the end of the day in which a patient died or was discharged.*  
+
+
+###Excluded notes
+- Exclude Patients Age < 18
+    - Also exclude at aggregate_matrix step 
+- Exclude Note After died or discharge
+    - Unstructured clinical notes can reference column text in table noteevents.
+    - Note must in inpatient, ie. hadm_id not NULL
+    - Charttime not NULL and charttime >= dischtime
+    - Charttime is  NULL and date(chartdate) >= date(dischtime)
+- Create table storage valid notes  
+    Table：valid_noteevents
+
+    | Name             | Type      | Description                | Remark                                        |
+    |:----------------|:---------|:---------------------------|:-------------------| 
+    | row_id           | integer   | Note ID                    | Key                                           |
+    | subject_id       | integer   | Patient ID                 |                                               |
+    | hadm_id          | integer   | Admission ID               |                                               |
+    | admittime        | integer   | Admission time             |                                               |
+    | dischtime        | integer   | Discharge time             |                                               |
+    | chartdate        | timestamp | Note record date           |                                               |
+    | charttime        | timestamp | Note record time           |                                               |
+    | text             | text      | Note's text record         |                                               |
+    |                  |           |                            |                                               |
+
+    
+    ```{mysql, eval=FALSE}
+    CREATE TABLE valid_noteevents AS
+    SELECT note.row_id, note.subject_id, note.hadm_id, de.admittime, de.dischtime, note.chartdate, note.charttime,
+        note.text
+    FROM aggregate_matrix AS de 
+        LEFT JOIN noteevents AS note ON de.subject_id = note.subject_id AND de.hadm_id = note.hadm_id
+    WHERE de.age >= 18 
+        AND ((de.dischtime > note.charttime) 
+            OR (note.charttime is NULL AND date(de.dischtime)-date(note.chartdate)>0))
+    ORDER BY note.subject_id, note.hadm_id, note.charttime;
+    ```
+
+
+###Remove stop words 
+- Create table storage stop word free notes and 500 most informative words by TF-IDF  
+Table：tfidf  
+
+    | Name             | Type      | Description                | Remark                                        |
+    |:----------------|:---------|:---------------------------|:---------------------| 
+    | row_id           | integer   | Note I      D              |                                               |
+    | subject_id       | integer   | Patient ID                 |                                               |
+    | hadm_id          | integer   | Admission ID               |                                               |
+    | admittime        | timestamp | Admission time             |                                               |
+    | dischtime        | timestamp | Discharge time             |                                               |
+    | chartdate        | timestamp | Note record date           |                                               |
+    | charttime        | timestamp | Note record time           |                                               |
+    | desc_stop_free   | text      | Note with non-stop word    |                                               |
+    | desc_stop_free_c | integer   | Number of note's non-words |                                               |
+    | keep_note        | integer   | Index for keep note        | 1: Number of note's non-words >= 100,    0: no|
+    | admithour        | double precision | Hours between note recorde time and admittime | Calculate later     |
+    | tf_idf_500_all   | text      | Informative words by TF-IDF| IDF: all patient all note                     |
+    | tf_idf_500_per   | text      | Informative words by TF-IDF| IDF: per patient all note                     |
+    |                  |           |                            |                                               |
+
+    ```{mysql, eval=FALSE}
+    CREATE TABLE tfidf (
+        row_id integer,
+        subject_id integer,
+        hadm_id integer,
+        admittime timestamp(0) without time zone,
+        dischtime timestamp(0) without time zone,
+        chartdate timestamp(0) without time zone,
+        charttime timestamp(0) without time zone,
+        desc_stop_free text,
+        desc_stop_free_c integer,
+        keep_note integer,
+        tf_idf_500_all text,
+        tf_idf_500_per text
+        );
+    ```
+
+- Remove stop words by function Appendix.text_to_wordlist()
+    - Convert diacritics words  
+        ex. É => E
+    - Convert english contractions  
+        ex. havn't => have not
+    - Remove non-numbers and non-letters
+    - Convert words to lower case
+    - Split words
+    - Remove stop words, by Onix stop word list 1 (429 stop words)
+    ```{python, eval=FALSE}
+    import re
+    import unicodedata
+    import nltk
+    from nltk.corpus import stopwords
+    
+    contractions_rep = [(r"won\'t", 'will not'), (r"can\'t", 'cannot'), (r"i\'m", 'i am'), (r"ain\'t", 'is not'),
+            (r"(\w+)\'ll", '\g<1> will'), (r"(\w+)n\'t", '\g<1> not'), (r"(\w+)\'ve", '\g<1> have'), 
+            (r"(\w+)\'s", '\g<1> is'), (r"(\w+)\'re", '\g<1> are'), (r"(\w+)\'d", '\g<1> would'), 
+            (r"gonna", 'going to'), (r"wanna", 'want to'), (r"o'clock", 'of the clock'), 
+            (r"'tis", 'it is'), (r"'twas", 'it was'), (r"y'all", 'you all')]
+    contractions_list=[]
+    for (regex, repl) in contractions_rep:
+        contractions_list.append((re.compile(regex), repl))
+    
+    
+    onix1 = set([u"a",u"a's",u"able",...,u"yourselves",u"z",u"zero"])
+    
+    class Appendix(object):
+        @staticmethod
+        def text_to_wordlist(content, remove_numbers=False, remove_stopwords=False):
+            
+            # 1. Convert diacritics words
+            content = unicode(content, 'utf-8')
+            content = unicodedata.normalize('NFD', content)
+            content = content.encode('ascii', 'ignore')
+            
+            # 2. Convert english contractions
+            for (pattern, repl) in contractions_list:
+                (content, count) = re.subn(pattern, repl, content)
+            
+            # 3. Optionally remove non-numbers(false by default) and non-letters 
+            if remove_numbers:
+                content = re.sub("[^a-zA-Z]"," ", content)
+            else:
+                content = re.sub("[^a-zA-Z0-9]"," ", content) 
+            
+            # 4. Convert words to lower case
+            content = content.lower()
+            
+            # 5. Split words
+            content = content.split()
+            
+            # 6. Optionally remove stop words (false by default)
+            if remove_stopwords:
+                content = [w for w in content if not w in onix1]
+            return content
+    ```  
+    
+- Patients were excluded if they had fewer than 100 non-stop words.
+    - Exclude notes: Number of note's non-stop words >= 100
+    - Give index for keep note at column keep_note in table tfidf    
+    ```{python, eval=FALSE}
+    from Appendix import Appendix
+    import psycopg2
+    
+    get_cur.execute("""SELECT count(*) 
+                       FROM valid_noteevents as a left join tfidf as b 
+                            on a.row_id = b.row_id 
+                       Where b.row_id is null;""")
+    length = get_cur.fetchall()[0][0]
+    print length
+    
+    while length > 0:
+        sql_text = "Select * 
+                    From w10403323.valid_noteevents as a left join tfidf as b 
+                        on a.row_id = b.row_id 
+                    Where b.row_id is null limit 10000;"
+        get_cur.execute(sql_text)
+        table = get_cur.fetchall()
+        for row in table:
+            desc_stop_free = Appendix.text_to_wordlist(row[7], remove_numbers=True,  remove_stopwords=True)
+            if len(desc_stop_free)>=100:
+                keep_note="1"
+            else:
+                keep_note="0"
+            get_cur.execute("""INSERT INTO w10403323.tfidf 
+                                (row_id, subject_id, hadm_id, admittime, dischtime, chartdate, charttime , 
+                                    desc_stop_free, desc_stop_free_c, keep_note)
+                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                                (row[0], row[1], row[2], row[3], row[4], row[5], row[6],
+                                    " ".join(desc_stop_free), len(desc_stop_free), keep_note))
+        get_cur.execute("""SELECT count(*) 
+                           FROM valid_noteevents as a left join tfidf as b 
+                                on a.row_id = b.row_id 
+                           Where b.row_id is null;""")
+        length = get_cur.fetchall()[0][0]
+        print length
+    ```
+    - Calculae vocabularies for note with non-stop words >= 100
+    ```{python, eval=FALSE}
+    get_cur.execute("""Select row_id FROM tfidf Where keep_note = 1;""")
+    length = len(get_cur.fetchall())
+    
+    analysis_words=[]
+    i=0; print i;
+    while i < length:
+        sql_text = "Select desc_stop_free FROM tfidf Where keep_note = 1 limit 1000 offset (" + str(i) + ");"
+        get_cur.execute(sql_text)
+        table = get_cur.fetchall()
+        
+        words = []
+        for row in table:
+            words = list(set(words) | set(row[0].split()))
+            
+        analysis_words = list(set(analysis_words) | set(words))
+        i = i + 1000; print str(i)
+    print "analysis words: "+str(len(analysis_words))
+    ```
+
+
+- Add admithour column for hours between note recorde time and admittime.
+    - If charttime is not null, admithour is hours between charttime and admittime.
+    - If charttime is null, we consider use chartdate to replace charttime.
+        - In carefully, we use (chartdate + 1 day) to replace charttime.
+        - If (chartdate + 1 day) is later than discharge time, then we use dischtime to replace charttime.
+        
+    ```{mysql, eval=FALSE}
+    Create table tfidf_1 as
+    Select tfidf.*,
+        case When tfidf.charttime is not null 
+                then date_part('day', tfidf.charttime - agg.admittime)*24 
+                    + date_part('hour', tfidf.charttime - agg.admittime)
+            When tfidf.charttime is null and tfidf.chartdate + interval '1 days' <= tfidf.dischtime 
+                then date_part('day', tfidf.chartdate - agg.admittime)*24 
+                    + 24 + date_part('hour', tfidf.chartdate - agg.admittime)
+            When tfidf.charttime is null and tfidf.chartdate + interval '1 days' > tfidf.dischtime 
+                then date_part('day', tfidf.dischtime - agg.admittime)*24 
+                    + date_part('hour', tfidf.dischtime - agg.admittime)
+        end as admithour
+    From aggregate_matrix as agg left join tfidf 
+        on agg.subject_id =tfidf.subject_id and agg.hadm_id =tfidf.hadm_id;
+    
+    ALTER TABLE tfidf RENAME TO tfidf_2;
+    ALTER TABLE tfidf_1 RENAME TO tfidf;
+    ```
+
+### Token counting
+Calculate number of unique and valid tokens(vocabularys) after remove stopwords and note with non-stop words >= 100  
+
+```{python, eval=FALSE}
+get_cur.execute("""Select desc_stop_free FROM tfidf Where keep_note = 1""")
+table = get_cur.fetchall()
+length = len(table)
+```
+- Unique vocabulary: 235184
+    ```{python, eval=FALSE}
+    words = []
+    subwords=[]
+    for i in range(0, length):
+        subwords = list(set(subwords) | set(table[i][0].split()))
+        if i % 10000 ==0:
+            words = list(set(words) | set(subwords))
+            subwords = []
+            print str(i) + ", total " + str(length)
+    words = list(set(words) | set(subwords))
+    print "Unique vocabulary: "+str(len(words))
+    ```
+- Unique token: 235184 
+    ```{python, eval=FALSE}
+    texts=[]; i=0;
+    for row in table:
+        texts.append(row[0].lower().split())
+        i = i+1
+        if i%10000 ==0:
+            print str(i)+", total "+ str(length)
+    from gensim import corpora
+    dictionary = corpora.Dictionary(texts)
+    corpus = [dictionary.doc2bow(text) for text in texts]
+    ```
+    
+    
+### Cohort update  
+- Cohort update  
+    ```{r fig.width=10, fig.height=8,echo=FALSE}
+    library(png)
+    library(grid)
+    img <- readPNG("D:\\Develop_code\\IPIR\\Text_LDA\\2_Slide\\picture\\flow chart_2.PNG")
+     grid.raster(img)
+    ```
+
+    | Population                    | Admission | Patient | Note    | Vocab. | Remark          |
+    |:----------------|------:|------:|------:|------:|:-----------------------|
+    | MIMIC v3.1                    | 58976     |  46520  |         |        |                 |
+    | Adult admission               | 50765     |  38551  |         |        | Exclude admission age < 18 |
+    | With severity and comorbidity | 49615     |  38440  | 1413459 |        | Exclude no spas ii score or no EH comorbidity |
+    | Duration of hospital stay     | 49085     |  38024  | 1354903 |        | Exclude note after died or discharge          |
+    | Analysis cohort               | 46436     |  36501  |  709690 | 235184 | Exclude note non-stop words < 100             |
+    |                               |           |         |         |        |                                               |
+    | Paper analysis cohort         |           |  19308  |  473764 | 285840 | MIMIC v2.6                                    |
+    |                               |           |         |         |        |                                               |
+    
+
+
+##Extract most informative words by TF-IDF
+>*A TF-IDF metric was applied to determine the 500 most informative words in each patient's notes, and we then limited our over-all vocabulary to the union of the most informative words per-patient. This pre-processing step reduced the overall vocabulary down to 285,840 words from over 1 million terms while maintaining the most distinctive features of each patient.*
+
+- Determine the 500 most informative words in each note by TF-IDF. 
+
+###Most 500 informative words set in each note (Consider 1, use later)
+- TF: per note
+- IDF: all patient all note
+    - Create corpus as a list object, each element storage a text note. Total are 711,022 notes.  
+    Since corpus are large, we append 10,000 notes a time, then pickle it for reduce memory space.  
+    - Calulate TF-IDF features by TfidfVectorizer and pickle TF-IDF relate objects.  
+        - TfidfVectorizer(): Convert a collection of raw documents to a matrix of TF-IDF features.  
+        - fit_transform(): Learn vocabulary and idf, return term-document matrix.  
+        - get_feature_names(): Array mapping from feature integer indices to feature name
+    - Get most 500 informative words in each note.  
+        - Storage to column tf_idf_500_all in table tfidf concentrated by empty blank. 
+    
+    ```{python, eval=FALSE, echo=TRUE}
+    get_cur.execute("""Select row_id, desc_stop_free FROM tfidf Where keep_note = 1""")
+    table = get_cur.fetchall()
+    length = len(table)
+    
+    corpus = []; row_id = []; i=0;
+    for row in table:
+        corpus.append(row[1])
+        row_id.append(row[0])
+        i = i+1
+        if i%1000 ==0:
+            print str(i)+", total "+ str(length)
+    print str(i)+", get data end."
+    
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    vectorizer = TfidfVectorizer(lowercase=False, max_df=1.0, min_df=0.0)
+    tfidf = vectorizer.fit_transform(corpus)
+    words = vectorizer.get_feature_names()
+    print "TF-IDF end."
+    
+    for i in range(0,length):
+        d=tfidf.getrow(i)
+        s = zip(d.indices, d.data)
+        sorted_s = sorted(s, key=lambda v: v[1], reverse=True)
+        info_word = ""
+        for j in range(0, min(500,len(sorted_s))):
+            info_word += " "+words[sorted_s[j][0]]
+        get_cur.execute("""UPDATE tfidf set tf_idf_500_all =(%s) where row_id=(%s);""", (info_word.strip(), str(row_id[i])))
+        if i%10000 ==0:
+            print str(i)
+    print str(i)+" End."
+    ```  
+- Unique token: 235184
+    ```{python, eval=FALSE}
+    get_cur.execute("""Select row_id, tf_idf_500_all 
+                       FROM tfidf 
+                       Where keep_note = 1 and tf_idf_500_all is not null """)
+    table = get_cur.fetchall()
+    length = len(table)
+
+    texts=[]; i=0;
+    for row in table:
+        texts.append(row[0].lower().split())
+        i = i+1
+        if i%10000 ==0:
+            print str(i)+", total "+ str(length)
+    from gensim import corpora
+    dictionary = corpora.Dictionary(texts)
+    corpus = [dictionary.doc2bow(text) for text in texts]
+    ```
+
+###**Most 500 informative words set in each note (Consider 2, may not need)**
+- TF: per note
+- IDF: per patient all note
+    - For each patients, create corpus as a list object, each element storage a text note.  
+    Total are 24,255 patients.  
+    - Calulate TF-IDF features by TfidfVectorizer and pickle TF-IDF relate objects.  
+        - TfidfVectorizer(): Convert a collection of raw documents to a matrix of TF-IDF features.  
+        - fit_transform(): Learn vocabulary and idf, return term-document matrix.  
+        - get_feature_names(): Array mapping from feature integer indices to feature name
+    - Get most 500 informative words in each note.  
+        - Storage to column tf_idf_500_per in table tfidf concentrated by empty blank. 
+    
+    ```{python, eval=FALSE, echo=TRUE}
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    import psycopg2
+    
+    get_cur.execute("""SELECT DISTINCT(subject_id)
+                       FROM tfidf
+                       Where keep_note = 1 and tf_idf_500_per is null 
+                       ORDER BY subject_id;""")
+    patients = get_cur.fetchall()
+    length =len(patients)
+    
+    for k in range(0,length):
+        sql_text =  "Select row_id, desc_stop_free 
+                     FROM tfidf 
+                     WHERE keep_note = 1 and subject_id = " + str(patients[k][0])
+        get_cur.execute(sql_text)
+        table = get_cur.fetchall()
+    
+        corpus = []; row_id = []
+        for row in table:
+            corpus.append(row[1])
+            row_id.append(row[0])
+        
+        vectorizer = TfidfVectorizer(lowercase=False, max_df=1.0, min_df=0.0)
+        tfidf = vectorizer.fit_transform(corpus)
+        words = vectorizer.get_feature_names()
+        
+        for i in range(0, len(table)):
+            d = tfidf.getrow(i)
+            s = zip(d.indices, d.data)
+            sorted_s = sorted(s, key=lambda v: v[1], reverse=True)
+            info_word = ""
+            for j in range(0, min(500, len(sorted_s))):
+                info_word += " " + words[sorted_s[j][0]]
+            get_cur.execute("""UPDATE tfidf set tf_idf_500_per =(%s) where row_id=(%s);""",
+                                (info_word.strip(), str(row_id[i])))
+        print str(patients[k][0]) +", " + str(k) +"/"+str(length)
+    ``` 
+- Unique token: 
+```{python, eval=FALSE, fig.width=30}
+    get_cur.execute("""Select row_id, tf_idf_500_per 
+                       FROM tfidf 
+                       Where keep_note = 1 and tf_idf_500_per is not null """)
+    table = get_cur.fetchall()
+    length = len(table)
+
+    texts=[]; i=0;
+    for row in table:
+        texts.append(row[0].lower().split())
+        i = i+1
+        if i%10000 ==0:
+            print str(i)+", total "+ str(length)
+    from gensim import corpora
+    dictionary = corpora.Dictionary(texts)
+    corpus = [dictionary.doc2bow(text) for text in texts]
+    ```
+
+###Keep word from tfidf information words set
+- Keep each note's token if they appear in their tfidf information words set  
+
+
+    ```{python, eval=FALSE}
+    get_cur.execute("""Select row_id, desc_stop_free, tf_idf_500_all FROM tfidf
+                       Where keep_note = 1 and tfidf_all is null """)
+    table = get_cur.fetchall()
+    length = len(table)
+    
+    for i in range(0, length):
+        info_set = set(table[i][2].split())
+        content = [w for w in table[i][1].split() if w in info_set]
+    
+        text = "UPDATE tfidf set tfidf_all = '" +" ".join(content)+ "'"
+        text += "Where row_id = " + str(table[i][0])
+        get_cur.execute(text)
+    ```
+
+
+###Basic descriptive statistics  
+- Compare difference in notes before and after tfidf information word selection.
+
+    |                     | Before | Tf-idf set | After |
+    |:-------------|----------:|----------:|----------:|
+    | Note count                     | 709690               | 709690               | 709690 |
+    | Total unique tokens            | 235184               | 235184               | 235184 |
+    | Note length                    |                      |                      | |
+    | \ \ \ \ mean (95% CI)          | 252.0 (251.6, 252.4) | 170.0 (169.8, 170.3) | 251.0 (250.6, 251.4)|
+    | \ \ \ \ mode                   | 103                  | 500                  | 103|
+    | \ \ \ \ min                    | 100                  | 38                   | 100 |
+    | \ \ \ \ median                 | 183                  | 130                  | 183 |
+    | \ \ \ \ max                    | 4396                 | 500                  | 3986|
+
+
+##Generate topics by LDA
+>*Topics were generated for each note using Latent Dirichlet Allocation.*
+
+###Use all valid notes  
+
+- Use all valid notes and only 500 informative words to bulid LDA model
+    ```{python, eval=FALSE}
+    get_cur.execute("""Select row_id, tfidf_all 
+                       FROM tfidf 
+                       Where keep_note = 1 and tfidf_all is not null """)
+    table = get_cur.fetchall()
+    length = len(table)
+    
+    texts=[]; i=0;
+    for row in table:
+        texts.append(row[1].lower().split())
+        i = i+1
+    ```
+    
+    
+###Bulid LDA in differenct topic numbers  
+- Build 20 ~ 100 topics
+- Use note in first 12 hours, first 24 hours, ..., first 240 hours and all duration time in admisson.  
+    ```{python, eval=FALSE}
+    from gensim import corpora, models
+    dictionary = corpora.Dictionary(texts)
+    corpus = [dictionary.doc2bow(text) for text in texts]
+    
+    for j in range(20, 101):
+        lda = models.ldamodel.LdaModel(corpus,id2word=dictionary, num_topics=j, update_every=1, passes=1)
+        lda.save(path +"all_lda_"+str(j)+'.model')
+        print "Number of topics: "+ str(j)
+    ```
+    
+    
+
+###**Transform text note to topics proportion (Doing)**
+Concentration each patient's notes in first 12, 24, ..., 240 hours and whole duration in ICU (including before ICU admission), then translate it into 20, 21, ..., 100 topic porportions by lda model.
+
+```{python, eval=FALSE}
+from gensim import corpora, models
+dictionary = corpora.Dictionary.load(path+"all_lda_dictionary.dict")
+corpus = corpora.MmCorpus(path+"all_lda_corpus.mm")
+
+hour_range = range(12, 241, 12)
+hour_range.append('all')
+for j in hour_range:
+    for i in range(20,101):
+        lda = models.LdaModel.load(path + "all_lda_" + str(i) + '.model')
+        reusetext  = "Select subject_id, hadm_id From "+update_table+" "
+        reusetext += "where lda_"+str(i) +"_"+str(j) +" is null and "
+        reusetext += "hadm_id between 100001 and 199999 "
+        reusetext += "Order by hadm_id;"
+        get_cur.execute(reusetext)
+        agg_table = get_cur.fetchall()
+        length =len(agg_table)
+
+        count = 0
+        while length>0:
+            if isinstance( j, int ):
+                text  = "Select agg.subject_id, agg.hadm_id, tfidf.tfidf_all "
+                text += "From aggregate_matrix as agg inner join tfidf on " 
+                text += "     agg.subject_id =tfidf.subject_id and agg.hadm_id =tfidf.hadm_id " 
+                text += "Where tfidf.subject_id = " + str(row[0]) + " and " 
+                text += "      tfidf.hadm_id = " + str(row[1]) + " and keep_note = 1 and " 
+                text += "      tfidf.admithour <= " + str(j)
+            else:
+                text  = "Select agg.subject_id, agg.hadm_id, tfidf.tfidf_all " 
+                text += "From aggregate_matrix as agg inner join tfidf " 
+                text += "     on agg.subject_id =tfidf.subject_id and agg.hadm_id =tfidf.hadm_id " 
+                text += "Where tfidf.subject_id = " + str(row[0]) + " and " 
+                text += "      tfidf.hadm_id = " + str(row[1]) + " and " 
+                text += "      keep_note = 1 "
+                
+            loc_cur.execute(text)
+            text2topic_table = loc_cur.fetchall()
+            if len(text2topic_table)>0:
+                notes = []
+                for note in text2topic_table:
+                    notes.append(note[2])
+                t_notes = " ".join(notes)
+                vec_bow = dictionary.doc2bow(t_notes.split())
+                vec_lsi = lda.__getitem__(vec_bow, eps=0)
+                
+                topic_proportion = []
+                for (ii, jj) in vec_lsi:
+                    topic_proportion.append(str(jj))
+                    
+                text  = "UPDATE "+update_table+" set lda_"+str(i)+"_"+str(j)+" = '"+" ".join(topic_proportion)+"' "
+                text += "Where subject_id = " + str(row[0]) + " and hadm_id = " + str(row[1])+" ;"
+            else:
+                text  = "UPDATE "+update_table+" set lda_"+str(i)+"_"+str(j)+" = '"+"No notes"+"' "
+                text += "Where subject_id = " + str(row[0]) + " and hadm_id = " + str(row[1])+" ;"
+            get_cur.execute(text)
+```
+
+
+
+#SVM model
+##Features  
+
+- Structured features
+    - Admission (3 features)
+        - Age, gender, admission SAPS II
+    - Retrospective Derived Features (36 features)
+        - Age, gender, admission SAPS II, min SAPS II, max SAPS II, final SAPS II, and all 30 EH comorbidities.
+- Unstructured  features
+    - Select most predictability topic number.
+    - Time-varying Topic Model 1 - 20 (50 features)
+        - Topic Model \ \ 1: topic features derived from notes (first  12 hrs in ICU)  
+          Topic Model 10: topic features derived from notes (first 120 hrs in ICU)  
+          Topic Model 20: topic features derived from notes (first 240 hrs in ICU) 
+    - Retrospective Topic Model (50 features)
+        - topic features derived from notes (all hrs in ICU)
+
+
+##Models  
+
+- Real time model
+    - Admission (3)
+    - Time-varying Topic Model (50)
+    - Admission (3) + Time-varying Topic Model (50)
+        ```{python, eval=FALSE}
+        hour_range = range(108, 241, 12)
+        hour_range.append('all')
+        for j in hour_range:
+            train_text  = "Select death_inhosp, death_30, death_1year, age, gender, first_sapsii, "
+            train_text += "       lda_50_" + str(j)+" "
+            train_text += "from "+ update_table+" "
+            train_text += "Where train = 1 and lda_" + str(i) + "_" + str(j)+ " not like 'No notes';"
+            get_cur.execute(train_text)
+            traintable = get_cur.fetchall()
+            length_use = len(traintable)
+            
+            X=np.zeros((1,i+3)); y_in=np.zeros((1,0)); y_30=np.zeros((1,0)); y_1y=np.zeros((1,0));
+            for row in traintable:
+                if row[4] == 'M':
+                    gender = 1
+                else:
+                    gender = 0
+                X = np.vstack((X, np.array(map(np.float64, [row[3],gender,row[5]]+row[6].split()))))
+                y_in = np.append(y_in, np.float64(row[0]))
+                y_30 = np.append(y_30, np.float64(row[1]))
+                y_1y = np.append(y_1y, np.float64(row[2]))
+                X = X[1:];y_in = y_in[0:]; y_30 = y_30[0:]; y_1y = y_1y[0:]
+                
+                svr_in = SVR(C=1.0, epsilon=0.2); svr_in.fit(X, y_in);
+                joblib.dump(svr_in, path+"svr_in_"+str(j)+".pkl")
+                
+                svr_30 = SVR(C=1.0, epsilon=0.2); svr_30.fit(X, y_30);
+                joblib.dump(svr_30, path + "svr_30_" + str(j) + ".pkl")
+                
+                svr_1y = SVR(C=1.0, epsilon=0.2); svr_1y.fit(X, y_1y);
+                joblib.dump(svr_1y, path + "svr_1y_" + str(j) + ".pkl")
+        ```
+- Retrospective model
+    - Retrospective Derived Features (36) 
+    - Retrospective Topic Model (50) 
+    - Admission (3) + Retrospective Topic Model (50) 
+    - Retrospective Topic Model (50) + Derived Features (36) 
+
+
+##Prediction accuracy, AUC
+###AUC compare
+- In-Hospital Mortality
+    
+
+    <table class="tg" style="undefined;table-layout: fixed; width: 1140px">
+    <colgroup>
+    <col style="width: 411px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    </colgroup>
+    <tr>
+    <th class="tg-hd01"></th>
+    <th class="tg-hd01" colspan="3">MIMIC 2.6</th>
+    <th class="tg-hd01" colspan="3">MIMIC3.1 test</th>
+    <th class="tg-hd01" colspan="3">MIMIC 3.1 train</th>
+    </tr>
+    <tr>
+    <td class="tg-hd01">Model Used</td>
+    <td class="tg-hd01">AUC</td>
+    <td class="tg-hd01">Sens.</td>
+    <td class="tg-hd01">Spec.</td>
+    <td class="tg-hd01">Python<br>svr</td>
+    <td class="tg-hd01">R<br>svr</td>
+    <td class="tg-hd01">R<br>logistic</td>
+    <td class="tg-hd01">Python<br>svr</td>
+    <td class="tg-hd01">R<br>svr</td>
+    <td class="tg-hd01">R<br>logistic</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Admission Baseline Model(3)</td>
+    <td class="tg-ce11">0.771</td>
+    <td class="tg-ce11">0.999</td>
+    <td class="tg-ce11">0.010</td>
+    <td class="tg-ce11">0.616</td>
+    <td class="tg-ce11">0.611</td>
+    <td class="tg-ce11">0.811</td>
+    <td class="tg-ce11">0.692</td>
+    <td class="tg-ce11">0.591</td>
+    <td class="tg-ce11">0.802</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Time-varying Topic Model 1(50)</td>
+    <td class="tg-ce11">0.728</td>
+    <td class="tg-ce11">0.858</td>
+    <td class="tg-ce11">0.471</td>
+    <td class="tg-ce11">0.534</td>
+    <td class="tg-ce11">0.570</td>
+    <td class="tg-ce11">0.560</td>
+    <td class="tg-ce11">0.538</td>
+    <td class="tg-ce11">0.772</td>
+    <td class="tg-ce11">0.578</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">...</td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Time-varying Topic Model 10(50)</td>
+    <td class="tg-ce11">0.838</td>
+    <td class="tg-ce11">0.686</td>
+    <td class="tg-ce11">0.829</td>
+    <td class="tg-ce11">0.530</td>
+    <td class="tg-ce11">0.622</td>
+    <td class="tg-ce11">0.620</td>
+    <td class="tg-ce11">0.546</td>
+    <td class="tg-ce11">0.910</td>
+    <td class="tg-ce11">0.640</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">...</td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Time-varying Topic Model 20(50)</td>
+    <td class="tg-ce11">0.791</td>
+    <td class="tg-ce11">0.525</td>
+    <td class="tg-ce11">0.853</td>
+    <td class="tg-ce11">0.507</td>
+    <td class="tg-ce11">0.606</td>
+    <td class="tg-ce11">0.585</td>
+    <td class="tg-ce11">0.532</td>
+    <td class="tg-ce11">0.947</td>
+    <td class="tg-ce11">0.635</td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">Combined Time-varying Model 1(53)</td>
+    <td class="tg-vs21">0.840</td>
+    <td class="tg-vs21">0.638</td>
+    <td class="tg-vs21">0.850</td>
+    <td class="tg-vs21">0.669</td>
+    <td class="tg-vs21">0.709</td>
+    <td class="tg-vs21">0.811</td>
+    <td class="tg-vs21">0.755</td>
+    <td class="tg-vs21">0.819</td>
+    <td class="tg-vs21">0.808</td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">...</td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">Combined Time-varying Model 10(53)</td>
+    <td class="tg-vs21">0.854</td>
+    <td class="tg-vs21">0.666</td>
+    <td class="tg-vs21">0.844</td>
+    <td class="tg-vs21">0.628</td>
+    <td class="tg-vs21">0.682</td>
+    <td class="tg-vs21">0.772</td>
+    <td class="tg-vs21">0.804</td>
+    <td class="tg-vs21">0.925</td>
+    <td class="tg-vs21">0.768</td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">...</td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">Combined Time-varying Model 20(53)</td>
+    <td class="tg-vs21">0.798</td>
+    <td class="tg-vs21">0.299</td>
+    <td class="tg-vs21">0.950</td>
+    <td class="tg-vs21">0.607</td>
+    <td class="tg-vs21">0.648</td>
+    <td class="tg-vs21">0.712</td>
+    <td class="tg-vs21">0.832</td>
+    <td class="tg-vs21">0.959</td>
+    <td class="tg-vs21">0.729</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Retrospective Derived Features Model(36)</td>
+    <td class="tg-ce11">0.901</td>
+    <td class="tg-ce11">0.997</td>
+    <td class="tg-ce11">0.108</td>
+    <td class="tg-ce11">0.701</td>
+    <td class="tg-ce11">0.553</td>
+    <td class="tg-ce11">0.706</td>
+    <td class="tg-ce11">0.920</td>
+    <td class="tg-ce11">0.697</td>
+    <td class="tg-ce11">0.708</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Retrospective Topic Model(50)</td>
+    <td class="tg-ce11">0.944</td>
+    <td class="tg-ce11">0.856</td>
+    <td class="tg-ce11">0.892</td>
+    <td class="tg-ce11">0.799</td>
+    <td class="tg-ce11">0.718</td>
+    <td class="tg-ce11">0.665</td>
+    <td class="tg-ce11">0.802</td>
+    <td class="tg-ce11">0.908</td>
+    <td class="tg-ce11">0.677</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Retrospective Topic(50) + Admission Model(3)</td>
+    <td class="tg-ce11">0.944</td>
+    <td class="tg-ce11">0.821</td>
+    <td class="tg-ce11">0.910</td>
+    <td class="tg-ce11">0.770</td>
+    <td class="tg-ce11">0.807</td>
+    <td class="tg-ce11">0.830</td>
+    <td class="tg-ce11">0.835</td>
+    <td class="tg-ce11">0.916</td>
+    <td class="tg-ce11">0.830</td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">Retrospective Topic(50) + Derived Features Model(36)</td>
+    <td class="tg-vs21">0.961</td>
+    <td class="tg-vs21">0.915</td>
+    <td class="tg-vs21">0.870</td>
+    <td class="tg-vs21">0.763</td>
+    <td class="tg-vs21">0.808</td>
+    <td class="tg-vs21">0.848</td>
+    <td class="tg-vs21">0.915</td>
+    <td class="tg-vs21">0.937</td>
+    <td class="tg-vs21">0.852</td>
+    </tr>
+    </table>
+
+
+
+- 30 Day Mortality
+
+    <table class="tg" style="undefined;table-layout: fixed; width: 1140px">
+    <colgroup>
+    <col style="width: 411px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    </colgroup>
+    <tr>
+    <th class="tg-hd01"></th>
+    <th class="tg-hd01" colspan="3">MIMIC 2.6</th>
+    <th class="tg-hd01" colspan="3">MIMIC3.1 test</th>
+    <th class="tg-hd01" colspan="3">MIMIC 3.1 train</th>
+    </tr>
+    <tr>
+    <td class="tg-hd01">Model Used</td>
+    <td class="tg-hd01">AUC</td>
+    <td class="tg-hd01">Sens.</td>
+    <td class="tg-hd01">Spec.</td>
+    <td class="tg-hd01">Python<br>svr</td>
+    <td class="tg-hd01">R<br>svr</td>
+    <td class="tg-hd01">R<br>logistic</td>
+    <td class="tg-hd01">Python<br>svr</td>
+    <td class="tg-hd01">R<br>svr</td>
+    <td class="tg-hd01">R<br>logistic</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Admission Baseline Model(3)</td>
+    <td class="tg-ce11">0.683</td>
+    <td class="tg-ce11">0.995</td>
+    <td class="tg-ce11">0.075</td>
+    <td class="tg-ce11">0.460</td>
+    <td class="tg-ce11">0.452</td>
+    <td class="tg-ce11">0.698</td>
+    <td class="tg-ce11">0.449</td>
+    <td class="tg-ce11">0.462</td>
+    <td class="tg-ce11">0.696</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Time-varying Topic Model 1(50)</td>
+    <td class="tg-ce11">0.695</td>
+    <td class="tg-ce11">0.150</td>
+    <td class="tg-ce11">0.944</td>
+    <td class="tg-ce11">0.501</td>
+    <td class="tg-ce11">0.501</td>
+    <td class="tg-ce11">0.529</td>
+    <td class="tg-ce11">0.501</td>
+    <td class="tg-ce11">0.824</td>
+    <td class="tg-ce11">0.846</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">...</td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Time-varying Topic Model 10(50)</td>
+    <td class="tg-ce11">0.759</td>
+    <td class="tg-ce11">0.817</td>
+    <td class="tg-ce11">0.551</td>
+    <td class="tg-ce11">0.465</td>
+    <td class="tg-ce11">0.558</td>
+    <td class="tg-ce11">0.584</td>
+    <td class="tg-ce11">0.482</td>
+    <td class="tg-ce11">0.949</td>
+    <td class="tg-ce11">0.595</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">...</td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Time-varying Topic Model 20(50)</td>
+    <td class="tg-ce11">0.665</td>
+    <td class="tg-ce11">0.602</td>
+    <td class="tg-ce11">0.579</td>
+    <td class="tg-ce11">0.549</td>
+    <td class="tg-ce11">0.541</td>
+    <td class="tg-ce11">0.553</td>
+    <td class="tg-ce11">0.543</td>
+    <td class="tg-ce11">0.976</td>
+    <td class="tg-ce11">0.614</td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">Combined Time-varying Model 1(53)</td>
+    <td class="tg-vs21">0.761</td>
+    <td class="tg-vs21">0.348</td>
+    <td class="tg-vs21">0.885</td>
+    <td class="tg-vs21">0.501</td>
+    <td class="tg-vs21">0.549</td>
+    <td class="tg-vs21">0.695</td>
+    <td class="tg-vs21">0.487</td>
+    <td class="tg-vs21">0.561</td>
+    <td class="tg-vs21">0.705</td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">...</td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">Combined Time-varying Model 10(53)</td>
+    <td class="tg-vs21">0.796</td>
+    <td class="tg-vs21">0.641</td>
+    <td class="tg-vs21">0.770</td>
+    <td class="tg-vs21">0.541</td>
+    <td class="tg-vs21">0.582</td>
+    <td class="tg-vs21">0.697</td>
+    <td class="tg-vs21">0.526</td>
+    <td class="tg-vs21">0.958</td>
+    <td class="tg-vs21">0.702</td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">...</td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">Combined Time-varying Model 20(53)</td>
+    <td class="tg-vs21">0.750</td>
+    <td class="tg-vs21">0.011</td>
+    <td class="tg-vs21">0.991</td>
+    <td class="tg-vs21">0.496</td>
+    <td class="tg-vs21">0.600</td>
+    <td class="tg-vs21">0.704</td>
+    <td class="tg-vs21">0.487</td>
+    <td class="tg-vs21">0.981</td>
+    <td class="tg-vs21">0.708</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Retrospective Derived Features Model(36)</td>
+    <td class="tg-ce11">0.745</td>
+    <td class="tg-ce11">0.941</td>
+    <td class="tg-ce11">0.220</td>
+    <td class="tg-ce11">0.527</td>
+    <td class="tg-ce11">0.495</td>
+    <td class="tg-ce11">0.691</td>
+    <td class="tg-ce11">0.507</td>
+    <td class="tg-ce11">0.752</td>
+    <td class="tg-ce11">0.705</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Retrospective Topic Model(50)</td>
+    <td class="tg-ce11">0.783</td>
+    <td class="tg-ce11">0.342</td>
+    <td class="tg-ce11">0.909</td>
+    <td class="tg-ce11">0.494</td>
+    <td class="tg-ce11">0.542</td>
+    <td class="tg-ce11">0.585</td>
+    <td class="tg-ce11">0.509</td>
+    <td class="tg-ce11">0.939</td>
+    <td class="tg-ce11">0.584</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Retrospective Topic(50) + Admission Model(3)</td>
+    <td class="tg-ce11">0.813</td>
+    <td class="tg-ce11">0.872</td>
+    <td class="tg-ce11">0.633</td>
+    <td class="tg-ce11">0.496</td>
+    <td class="tg-ce11">0.575</td>
+    <td class="tg-ce11">0.706</td>
+    <td class="tg-ce11">0.486</td>
+    <td class="tg-ce11">0.956</td>
+    <td class="tg-ce11">0.709</td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">Retrospective Topic(50) + Derived Features Model(36)</td>
+    <td class="tg-vs21">0.818</td>
+    <td class="tg-vs21">0.096</td>
+    <td class="tg-vs21">0.985</td>
+    <td class="tg-vs21">0.488</td>
+    <td class="tg-vs21">0.626</td>
+    <td class="tg-vs21">0.749</td>
+    <td class="tg-vs21">0.466</td>
+    <td class="tg-vs21">0.982</td>
+    <td class="tg-vs21">0.753</td>
+    </tr>
+    </table>
+- 1 Year Mortality
+
+
+
+    <table class="tg" style="undefined;table-layout: fixed; width: 1140px">
+    <colgroup>
+    <col style="width: 411px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    <col style="width: 81px">
+    </colgroup>
+    <tr>
+    <th class="tg-hd01"></th>
+    <th class="tg-hd01" colspan="3">MIMIC 2.6</th>
+    <th class="tg-hd01" colspan="3">MIMIC3.1 test</th>
+    <th class="tg-hd01" colspan="3">MIMIC 3.1 train</th>
+    </tr>
+    <tr>
+    <td class="tg-hd01">Model Used</td>
+    <td class="tg-hd01">AUC</td>
+    <td class="tg-hd01">Sens.</td>
+    <td class="tg-hd01">Spec.</td>
+    <td class="tg-hd01">Python<br>svr</td>
+    <td class="tg-hd01">R<br>svr</td>
+    <td class="tg-hd01">R<br>logistic</td>
+    <td class="tg-hd01">Python<br>svr</td>
+    <td class="tg-hd01">R<br>svr</td>
+    <td class="tg-hd01">R<br>logistic</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Admission Baseline Model(3)</td>
+    <td class="tg-ce11">0.692</td>
+    <td class="tg-ce11">0.997</td>
+    <td class="tg-ce11">0.021</td>
+    <td class="tg-ce11">0.494</td>
+    <td class="tg-ce11">0.538</td>
+    <td class="tg-ce11">0.637</td>
+    <td class="tg-ce11">0.443</td>
+    <td class="tg-ce11">0.538</td>
+    <td class="tg-ce11">0.642</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Time-varying Topic Model 1(50)</td>
+    <td class="tg-ce11">0.681</td>
+    <td class="tg-ce11">0.218</td>
+    <td class="tg-ce11">0.907</td>
+    <td class="tg-ce11">0.544</td>
+    <td class="tg-ce11">0.551</td>
+    <td class="tg-ce11">0.535</td>
+    <td class="tg-ce11">0.548</td>
+    <td class="tg-ce11">0.767</td>
+    <td class="tg-ce11">0.554</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">...</td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Time-varying Topic Model 10(50)</td>
+    <td class="tg-ce11">0.715</td>
+    <td class="tg-ce11">0.321</td>
+    <td class="tg-ce11">0.870</td>
+    <td class="tg-ce11">0.468</td>
+    <td class="tg-ce11">0.554</td>
+    <td class="tg-ce11">0.543</td>
+    <td class="tg-ce11">0.481</td>
+    <td class="tg-ce11">0.881</td>
+    <td class="tg-ce11">0.577</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">...</td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    <td class="tg-ce11"></td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Time-varying Topic Model 20(50)</td>
+    <td class="tg-ce11">0.662</td>
+    <td class="tg-ce11">0.834</td>
+    <td class="tg-ce11">0.379</td>
+    <td class="tg-ce11">0.504</td>
+    <td class="tg-ce11">0.551</td>
+    <td class="tg-ce11">0.517</td>
+    <td class="tg-ce11">0.497</td>
+    <td class="tg-ce11">0.927</td>
+    <td class="tg-ce11">0.567</td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">Combined Time-varying Model 1(53)</td>
+    <td class="tg-vs21">0.743</td>
+    <td class="tg-vs21">0.705</td>
+    <td class="tg-vs21">0.665</td>
+    <td class="tg-vs21">0.531</td>
+    <td class="tg-vs21">0.590</td>
+    <td class="tg-vs21">0.642</td>
+    <td class="tg-vs21">0.495</td>
+    <td class="tg-vs21">0.789</td>
+    <td class="tg-vs21">0.655</td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">...</td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">Combined Time-varying Model 10(53)</td>
+    <td class="tg-vs21">0.760</td>
+    <td class="tg-vs21">0.512</td>
+    <td class="tg-vs21">0.812</td>
+    <td class="tg-vs21">0.542</td>
+    <td class="tg-vs21">0.588</td>
+    <td class="tg-vs21">0.634</td>
+    <td class="tg-vs21">0.494</td>
+    <td class="tg-vs21">0.900</td>
+    <td class="tg-vs21">0.653</td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">...</td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    <td class="tg-vs21"></td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">Combined Time-varying Model 20(53)</td>
+    <td class="tg-vs21">0.722</td>
+    <td class="tg-vs21">0.451</td>
+    <td class="tg-vs21">0.804</td>
+    <td class="tg-vs21">0.550</td>
+    <td class="tg-vs21">0.597</td>
+    <td class="tg-vs21">0.615</td>
+    <td class="tg-vs21">0.495</td>
+    <td class="tg-vs21">0.934</td>
+    <td class="tg-vs21">0.642</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Retrospective Derived Features Model(36)</td>
+    <td class="tg-ce11">0.776</td>
+    <td class="tg-ce11">0.999</td>
+    <td class="tg-ce11">0.045</td>
+    <td class="tg-ce11">0.526</td>
+    <td class="tg-ce11">0.554</td>
+    <td class="tg-ce11">0.704</td>
+    <td class="tg-ce11">0.468</td>
+    <td class="tg-ce11">0.709</td>
+    <td class="tg-ce11">0.713</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Retrospective Topic Model(50)</td>
+    <td class="tg-ce11">0.755</td>
+    <td class="tg-ce11">0.358</td>
+    <td class="tg-ce11">0.890</td>
+    <td class="tg-ce11">0.442</td>
+    <td class="tg-ce11">0.568</td>
+    <td class="tg-ce11">0.580</td>
+    <td class="tg-ce11">0.453</td>
+    <td class="tg-ce11">0.887</td>
+    <td class="tg-ce11">0.615</td>
+    </tr>
+    <tr>
+    <td class="tg-ce12">Retrospective Topic(50) + Admission Model(3)</td>
+    <td class="tg-ce11">0.784</td>
+    <td class="tg-ce11">0.314</td>
+    <td class="tg-ce11">0.919</td>
+    <td class="tg-ce11">0.441</td>
+    <td class="tg-ce11">0.597</td>
+    <td class="tg-ce11">0.654</td>
+    <td class="tg-ce11">0.409</td>
+    <td class="tg-ce11">0.912</td>
+    <td class="tg-ce11">0.677</td>
+    </tr>
+    <tr>
+    <td class="tg-vs22">Retrospective Topic(50) + Derived Features Model(36)</td>
+    <td class="tg-vs21">0.813</td>
+    <td class="tg-vs21">0.464</td>
+    <td class="tg-vs21">0.887</td>
+    <td class="tg-vs21">0.506</td>
+    <td class="tg-vs21">0.646</td>
+    <td class="tg-vs21">0.723</td>
+    <td class="tg-vs21">0.448</td>
+    <td class="tg-vs21">0.954</td>
+    <td class="tg-vs21">0.745</td>
+    </tr>
+    </table>
+
+###Patient cohort sizes
+
+
+<table class="tg" style="undefined;table-layout: fixed; width: 565px">
+<colgroup>
+<col style="width: 81px">
+<col style="width: 121px">
+<col style="width: 121px">
+<col style="width: 121px">
+<col style="width: 121px">
+</colgroup>
+<tr>
+<th class="tg-hd01" rowspan="2">Time<br>(Hour)</th>
+<th class="tg-hd01" rowspan="2">Total<br>(Admission)</th>
+<th class="tg-hd01" colspan="3">CohortSize (Control, Positive)</th>
+</tr>
+<tr>
+<td class="tg-hd01">In-Hospital</td>
+<td class="tg-hd01">30 Day</td>
+<td class="tg-hd01">1 Year</td>
+</tr>
+<tr>
+<td class="tg-ce01">12</td>
+<td class="tg-ce01">9953</td>
+<td class="tg-ce02">8866, 1087</td>
+<td class="tg-ce02">9636, 317</td>
+<td class="tg-ce02">8589, 1364</td>
+</tr>
+<tr>
+<td class="tg-ce11">24</td>
+<td class="tg-ce11">9721</td>
+<td class="tg-ce12">8731, 990</td>
+<td class="tg-ce12">9407, 314</td>
+<td class="tg-ce12">8371, 1350</td>
+</tr>
+<tr>
+<td class="tg-ce01">36</td>
+<td class="tg-ce01">9540</td>
+<td class="tg-ce02">8606, 934</td>
+<td class="tg-ce02">9236, 304</td>
+<td class="tg-ce02">8196, 1344</td>
+</tr>
+<tr>
+<td class="tg-ce11">48</td>
+<td class="tg-ce11">9200</td>
+<td class="tg-ce12">8324, 876</td>
+<td class="tg-ce12">8908, 292</td>
+<td class="tg-ce12">7882, 1318</td>
+</tr>
+<tr>
+<td class="tg-ce01">60</td>
+<td class="tg-ce01">8925</td>
+<td class="tg-ce02">8088, 837</td>
+<td class="tg-ce02">8641, 284</td>
+<td class="tg-ce02">7635, 1290</td>
+</tr>
+<tr>
+<td class="tg-ce11">72</td>
+<td class="tg-ce11">8460</td>
+<td class="tg-ce12">7672, 788</td>
+<td class="tg-ce12">8192, 268</td>
+<td class="tg-ce12">7223, 1237</td>
+</tr>
+<tr>
+<td class="tg-ce01">84</td>
+<td class="tg-ce01">8031</td>
+<td class="tg-ce02">7291, 740</td>
+<td class="tg-ce02">7775, 256</td>
+<td class="tg-ce02">6833, 1198</td>
+</tr>
+<tr>
+<td class="tg-ce11">96</td>
+<td class="tg-ce11">7561</td>
+<td class="tg-ce12">6847, 714</td>
+<td class="tg-ce12">7318, 243</td>
+<td class="tg-ce12">6425, 1136</td>
+</tr>
+<tr>
+<td class="tg-ce01">108</td>
+<td class="tg-ce01">7089</td>
+<td class="tg-ce02">6401, 688</td>
+<td class="tg-ce02">6858, 231</td>
+<td class="tg-ce02">5987, 1102</td>
+</tr>
+<tr>
+<td class="tg-ce11">120</td>
+<td class="tg-ce11">6609</td>
+<td class="tg-ce12">5958, 651</td>
+<td class="tg-ce12">6401, 208</td>
+<td class="tg-ce12">5570, 1039</td>
+</tr>
+<tr>
+<td class="tg-ce01">132</td>
+<td class="tg-ce01">6128</td>
+<td class="tg-ce02">5508, 620</td>
+<td class="tg-ce02">5935, 193</td>
+<td class="tg-ce02">5128, 1000</td>
+</tr>
+<tr>
+<td class="tg-ce11">144</td>
+<td class="tg-ce11">5702</td>
+<td class="tg-ce12">5103, 599</td>
+<td class="tg-ce12">5530, 172</td>
+<td class="tg-ce12">4781, 921</td>
+</tr>
+<tr>
+<td class="tg-ce01">156</td>
+<td class="tg-ce01">5326</td>
+<td class="tg-ce02">4771, 555</td>
+<td class="tg-ce02">5162, 164</td>
+<td class="tg-ce02">4441, 885</td>
+</tr>
+<tr>
+<td class="tg-ce11">168</td>
+<td class="tg-ce11">4934</td>
+<td class="tg-ce12">4407, 527</td>
+<td class="tg-ce12">4782, 152</td>
+<td class="tg-ce12">4110, 824</td>
+</tr>
+<tr>
+<td class="tg-ce01">180</td>
+<td class="tg-ce01">4600</td>
+<td class="tg-ce02">4086, 514</td>
+<td class="tg-ce02">4462, 138</td>
+<td class="tg-ce02">3817, 783</td>
+</tr>
+<tr>
+<td class="tg-ce11">192</td>
+<td class="tg-ce11">4236</td>
+<td class="tg-ce12">3752, 484</td>
+<td class="tg-ce12">4107, 129</td>
+<td class="tg-ce12">3514, 722</td>
+</tr>
+<tr>
+<td class="tg-ce01">204</td>
+<td class="tg-ce01">3960</td>
+<td class="tg-ce02">3502, 458</td>
+<td class="tg-ce02">3838, 122</td>
+<td class="tg-ce02">3272, 688</td>
+</tr>
+<tr>
+<td class="tg-ce11">216</td>
+<td class="tg-ce11">3666</td>
+<td class="tg-ce12">3232, 434</td>
+<td class="tg-ce12">3556, 110</td>
+<td class="tg-ce12">3022, 644</td>
+</tr>
+<tr>
+<td class="tg-ce01">228</td>
+<td class="tg-ce01">3469</td>
+<td class="tg-ce02">3053, 416</td>
+<td class="tg-ce02">3373, 96</td>
+<td class="tg-ce02">2845, 624</td>
+</tr>
+<tr>
+<td class="tg-ce11">240</td>
+<td class="tg-ce11">3208</td>
+<td class="tg-ce12">2814, 394</td>
+<td class="tg-ce12">3124, 84</td>
+<td class="tg-ce12">2626, 582</td>
+</tr>
+</table>
+
+
+##Possible topic for each LDA topic
+
+</style>
+
+<table class="tg" style="undefined;table-layout: fixed; width: 983px">
+<colgroup>
+<col style="width: 81px">
+<col style="width: 201px">
+<col style="width: 701px">
+</colgroup>
+<tr, >
+<th class="tg-hd01" height="40">Number</th>
+<th class="tg-hd01">Possible topic</th>
+<th class="tg-hd01">top 20 words</th>
+</tr>
+<tr>
+<td class="tg-ce01">1</td>
+<td class="tg-ce02">neuro</td>
+<td class="tg-ce02">neuro, head, ct, left, mri, sbp, checks, exam, mm, pupils, hospital, hemorrhage, commands, icp, dilantin, extremities, sdh, sah, stroke, reactive</td>
+</tr>
+<tr>
+<td class="tg-ce01">2</td>
+<td class="tg-ce02">medicine</td>
+<td class="tg-ce02">ml, dl, assessed, mg, pm, pulse, meq, icu, left, radial, comments, dp, ul, po, total, systems, review, medications, balance, spo</td>
+</tr>
+<tr>
+<td class="tg-ce01">3</td>
+<td class="tg-ce02">artery</td>
+<td class="tg-ce02">artery, left, carotid, aneurysm, identifier, numeric, internal, common, cerebral, embolization, vertebral, arteries, clip, cta, angiogram, service, order, amt, procedural, evidence</td>
+</tr>
+<tr>
+<td class="tg-ce01">4</td>
+<td class="tg-ce02">vascular access procedures</td>
+<td class="tg-ce02">procedure, catheter, picc, line, numeric, identifier, wire, clip, reason, sheath, stitle, namepattern, patient, dr, advanced, french, guidance, needle, final, placement</td>
+</tr>
+<tr>
+<td class="tg-ce01">5</td>
+<td class="tg-ce02">hiv infection</td>
+<td class="tg-ce02">hiv, pcp, process, diffuse, glass, ground, disease, infection, infectious, opacities, pulmonary, argatroban, interstitial, nameis, viral, differential, cd, atypical, pre, includes</td>
+</tr>
+<tr>
+<td class="tg-ce01">6</td>
+<td class="tg-ce02">stomas and wound </td>
+<td class="tg-ce02">wound, vac, tpn, colectomy, ileostomy, fistula, ostomy, vre, multiple, bmt, daptomycin, complicated, linezolid, sigmoid, colon, stoma, viremia, microangiopathy, pouch, end</td>
+</tr>
+<tr>
+<td class="tg-ce01">7</td>
+<td class="tg-ce02">cardiac</td>
+<td class="tg-ce02">arrest, cardiac, cooling, pea, colostomy, blanket, unresponsive, vf, vt, cpr, anoxic, injury, brain, protocol, eeg, sun, intubated, code, atropine, bradycardia</td>
+</tr>
+<tr>
+<td class="tg-ce01">8</td>
+<td class="tg-ce02">coronary artery</td>
+<td class="tg-ce02">cardiac, cath, cad, ekg, chest, nstemi, ck, plavix, heparin, asa, echo, mi, ccu, ischemia, troponin, cp, ef, heart, lad, enzymes</td>
+</tr>
+<tr>
+<td class="tg-ce01">9</td>
+<td class="tg-ce02">mechanical ventilation</td>
+<td class="tg-ce02">ml, pm, cmh, fio, rr, spontaneous, min, vt, hour, set, peep, ventilator, tube, mg, dl, mode, respiratory, rsbi, ve, pip</td>
+</tr>
+<tr>
+<td class="tg-ce01">10</td>
+<td class="tg-ce02">acute pancreatitis </td>
+<td class="tg-ce02">pain, abdominal, fluid, ct, drainage, abd, drain, bowel, pancreatitis, abdomen, surgery, tube, small, output, jp, ngt, cc, distended, post, dilaudid</td>
+</tr>
+<tr>
+<td class="tg-ce01">11</td>
+<td class="tg-ce02">atrial fibrillation</td>
+<td class="tg-ce02">mg, afib, lasix, atrial, coumadin, fibrillation, chf, gtt, heparin, hr, po, rate, amiodarone, iv, heart, af, inr, diuresis, diltiazem, ptt</td>
+</tr>
+<tr>
+<td class="tg-ce01">12</td>
+<td class="tg-ce02">respiratory distress</td>
+<td class="tg-ce02">cxr, hospital, respiratory, pna, pneumonia, copd, transferred, micu, pe, distress, admitted, ed, pulmonary, ct, chest, rr, bipap, nebs, resp, sputum</td>
+</tr>
+<tr>
+<td class="tg-ce01">13</td>
+<td class="tg-ce02">Urinary tract infection</td>
+<td class="tg-ce02">urine, dnr, uti, dni, foley, na, dementia, bladder, ns, cc, urinary, sodium, baseline, urology, free, hematuria, hyponatremia, water, daughter, tract</td>
+</tr>
+<tr>
+<td class="tg-ce01">14</td>
+<td class="tg-ce02">physical exam</td>
+<td class="tg-ce02">neck, noted, clear, abdomen, pulses, bilaterally, normal, lungs, bilateral, signs, tenderness, extremities, auscultation, edema, supple, soft, rubs, regular, rate, tender</td>
+</tr>
+<tr>
+<td class="tg-ce01">15</td>
+<td class="tg-ce02">abdominal and pelvic ct</td>
+<td class="tg-ce02">contrast, ct, pelvis, clip, abdomen, small, reason, left, iv, fluid, report, final, radiology, number, chest, evidence, free, pm, unremarkable, images</td>
+</tr>
+<tr>
+<td class="tg-ce01">16</td>
+<td class="tg-ce02">note1</td>
+<td class="tg-ce02">hr, resp, neuro, gi, skin, gu, cc, bs, abd, cv, noted, clear, yellow, urine, foley, soft, intact, id, cont, monitor</td>
+</tr>
+<tr>
+<td class="tg-ce01">17</td>
+<td class="tg-ce02">note2</td>
+<td class="tg-ce02">pt, pain, hr, mg, po, sats, bp, iv, oriented, today, oob, back, plan, nc, clear, chair, denies, cough, bed, good</td>
+</tr>
+<tr>
+<td class="tg-ce01">18</td>
+<td class="tg-ce02">International System of Units (SI Units)</td>
+<td class="tg-ce02">ml, mg, dl, pm, meq, icu, po, continue, code, medications, balance, review, spo, systems, total, labs, comments, ul, rhythm, prophylaxis</td>
+</tr>
+<tr>
+<td class="tg-ce01">19</td>
+<td class="tg-ce02">medication unit</td>
+<td class="tg-ce02">ml, dl, mg, pm, meq, icu, medications, total, current, extremities, rhythm, respiratory, assessment, balance, fluid, plan, drains, spo, cardiovascular, neurologic</td>
+</tr>
+<tr>
+<td class="tg-ce01">20</td>
+<td class="tg-ce02">Liver</td>
+<td class="tg-ce02">liver, cirrhosis, transplant, lactulose, ascites, hepatic, paracentesis, encephalopathy, tips, varices, etoh, hepatitis, sbp, albumin, fluid, failure, portal, inr, octreotide, hcv</td>
+</tr>
+<tr>
+<td class="tg-ce01">21</td>
+<td class="tg-ce02">Cardiology </td>
+<td class="tg-ce02">gtt, neo, ci, min, sbp, pa, ct, pulses, insulin, pacer, lasix, pain, weaned, ccu, kg, started, iabp, wean, mcg, monitor</td>
+</tr>
+<tr>
+<td class="tg-ce01">22</td>
+<td class="tg-ce02">Ischemic Stroke</td>
+<td class="tg-ce02">stenosis, carotid, cm, ica, artery, left, sec, peak, arteries, flow, systolic, proximal, year, plaque, internal, distal, vertebral, cca, reason, stroke</td>
+</tr>
+<tr>
+<td class="tg-ce01">23</td>
+<td class="tg-ce02">blood</td>
+<td class="tg-ce02">continue, negative, pm, blood, today, pending, urine, mg, setting, location, cultures, fever, cx, culture, elevated, follow, infection, patient, respiratory, trend</td>
+</tr>
+<tr>
+<td class="tg-ce01">24</td>
+<td class="tg-ce02">cardiovascular</td>
+<td class="tg-ce02">present, normal, icu, ml, patient, respiratory, sounds, pulse, left, cardiovascular, history, total, plan, chest, nose, throat, abdominal, note, agree, absent</td>
+</tr>
+<tr>
+<td class="tg-ce01">25</td>
+<td class="tg-ce02">bronch</td>
+<td class="tg-ce02">bronch, today, hemoptysis, bronchoscopy, bal, ml, bronchial, tb, ap, place, nl, vasculitis, location, steroid, ted, rigid, input, provided, steroids, derm</td>
+</tr>
+<tr>
+<td class="tg-ce01">26</td>
+<td class="tg-ce02">monitoring</td>
+<td class="tg-ce02">response, assessment, action, plan, continue, monitor, pt, acute, cont, pain, hr, remains, skin, failure, care, ordered, noted, respiratory, doctor, continues</td>
+</tr>
+<tr>
+<td class="tg-ce01">27</td>
+<td class="tg-ce02">tracheostomy</td>
+<td class="tg-ce02">trach, tube, peg, secretions, feeds, vent, placement, rehab, tf, mask, picc, collar, tracheostomy, today, feeding, place, sputum, hospital, suctioning, site</td>
+</tr>
+<tr>
+<td class="tg-ce01">28</td>
+<td class="tg-ce02">Sedation </td>
+<td class="tg-ce02">pt, hr, vent, gtt, abg, mcg, sedation, propofol, wean, fentanyl, peep, increased, cc, remains, intubated, sedated, bp, secretions, mg, min</td>
+</tr>
+<tr>
+<td class="tg-ce01">29</td>
+<td class="tg-ce02">lung</td>
+<td class="tg-ce02">assessment, lung, sounds, ventilation, comments, breathing, airway, cuff, type, invasive, sputum, ideal, day, intubation, volume, clear, ml, reason, tube, size</td>
+</tr>
+<tr>
+<td class="tg-ce01">30</td>
+<td class="tg-ce02">bleeding</td>
+<td class="tg-ce02">hct, bleeding, bleed, gi, blood, prbc, units, stable, unit, pt, hospital, gib, inr, ffp, active, egd, received, transfusion, stool, prbcs</td>
+</tr>
+<tr>
+<td class="tg-ce01">31</td>
+<td class="tg-ce02">sepsis</td>
+<td class="tg-ce02">hypotension, sepsis, levophed, line, shock, septic, blood, pressors, vanco, cultures, zosyn, bacteremia, cvp, cx, fluid, map, wbc, infection, lactate, hypotensive</td>
+</tr>
+<tr>
+<td class="tg-ce01">32</td>
+<td class="tg-ce02">alcohol withdrawal</td>
+<td class="tg-ce02">etoh, seizure, agitation, haldol, ativan, withdrawal, mg, abuse, agitated, seizures, hospital, iv, ciwa, valium, alcohol, psych, found, pt, head, eeg</td>
+</tr>
+<tr>
+<td class="tg-ce01">33</td>
+<td class="tg-ce02">dialysis</td>
+<td class="tg-ce02">renal, hd, failure, dialysis, esrd, acute, arf, cvvh, crrt, catheter, line, chronic, fluid, stage, bun, kidney, end, cr, today, disease</td>
+</tr>
+<tr>
+<td class="tg-ce01">34</td>
+<td class="tg-ce02">Swallowing disorders</td>
+<td class="tg-ce02">aspiration, airway, swallow, speech, cough, oral, risk, tracheal, inability, stent, liquids, protect, thin, secretions, evaluation, gag, clearance, swallowing, eval, po</td>
+</tr>
+<tr>
+<td class="tg-ce01">35</td>
+<td class="tg-ce02">bone</td>
+<td class="tg-ce02">fracture, spine, fx, left, trauma, hip, fractures, injury, fall, pain, cervical, spinal, rib, epidural, ortho, knee, multiple, hematoma, ct, neck</td>
+</tr>
+<tr>
+<td class="tg-ce01">36</td>
+<td class="tg-ce02">gallbladder</td>
+<td class="tg-ce02">liver, biliary, ercp, gallbladder, hepatic, duct, cholecystitis, stent, bile, cm, pancreatic, normal, dilatation, cholangitis, ultrasound, year, reason, stones, kidney, obstruction</td>
+</tr>
+<tr>
+<td class="tg-ce01">37</td>
+<td class="tg-ce02">hemorrhagic stroke</td>
+<td class="tg-ce02">contrast, head, hemorrhage, ct, clip, left, reason, year, report, radiology, final, findings, number, examination, frontal, mass, impression, underlying, acute, evidence</td>
+</tr>
+<tr>
+<td class="tg-ce01">38</td>
+<td class="tg-ce02">extremity</td>
+<td class="tg-ce02">vein, left, flow, ivc, filter, veins, venous, thrombosis, extremity, femoral, lower, dvt, thrombus, portal, patent, doppler, normal, year, reason, clot</td>
+</tr>
+<tr>
+<td class="tg-ce01">39</td>
+<td class="tg-ce02">cancer</td>
+<td class="tg-ce02">cancer, mass, ca, metastatic, biopsy, lung, cell, tumor, breast, malignant, chemo, mets, bone, onc, lymphoma, neoplasm, resection, chemotherapy, brain, radiation</td>
+</tr>
+<tr>
+<td class="tg-ce01">40</td>
+<td class="tg-ce02">Fluids </td>
+<td class="tg-ce02">dl, mg, meq, weight, arterial, pm, kg, nutrition, ml, glucose, tube, calcium, body, hr, diet, iu, ionized, current, hg, mm</td>
+</tr>
+<tr>
+<td class="tg-ce01">41</td>
+<td class="tg-ce02">heart valve</td>
+<td class="tg-ce02">valve, normal, left, aortic, mitral, ventricular, leaflets, mildly, wall, size, systolic, mild, doppler, atrium, regurgitation, function, thickened, tricuspid, dilated, motion</td>
+</tr>
+<tr>
+<td class="tg-ce01">42</td>
+<td class="tg-ce02">colitis</td>
+<td class="tg-ce02">status, mental, altered, delirium, ms, diff, colitis, infection, diarrhea, acute, failure, flagyl, cdiff, difficile, ams, stool, renal, neg, nafcillin, titles</td>
+</tr>
+<tr>
+<td class="tg-ce01">43</td>
+<td class="tg-ce02">chest</td>
+<td class="tg-ce02">chest, left, tube, reason, clip, pleural, ap, effusion, examination, year, portable, pneumothorax, placement, underlying, lung, pulmonary, medical, radiology, report, final</td>
+</tr>
+<tr>
+<td class="tg-ce01">44</td>
+<td class="tg-ce02">blood sugar/glucose</td>
+<td class="tg-ce02">meq, valuables, mg, dl, transferred, rate, pmh, heart, bp, total, date, weight, ml, home, glucose, min, money, doctor, code, rhythm</td>
+</tr>
+<tr>
+<td class="tg-ce01">45</td>
+<td class="tg-ce02">aortic</td>
+<td class="tg-ce02">aortic, cabg, post, artery, avr, bypass, repair, coronary, graft, valve, replacement, surgery, op, dissection, disease, pre, aorta, aaa, mvr, mechanical</td>
+</tr>
+<tr>
+<td class="tg-ce01">46</td>
+<td class="tg-ce02">hospital relate</td>
+<td class="tg-ce02">patient, hospital, namepattern, dr, stitle, day, lastname, time, blood, history, care, admission, discharge, continued, md, pressure, mr, showed, left, unit</td>
+</tr>
+<tr>
+<td class="tg-ce01">47</td>
+<td class="tg-ce02">patient history</td>
+<td class="tg-ce02">pain, history, mg, hospital, ed, daily, past, po, denies, patient, home, nausea, admitted, prior, chronic, bp, vomiting, ago, days, reports</td>
+</tr>
+<tr>
+<td class="tg-ce01">48</td>
+<td class="tg-ce02">family</td>
+<td class="tg-ce02">pt, family, ni, namepattern, activity, status, impaired, sit, home, balance, location, medical, rehab, history, min, sw, communication, social, goals, mobility</td>
+</tr>
+<tr>
+<td class="tg-ce01">49</td>
+<td class="tg-ce02">insulin</td>
+<td class="tg-ce02">mg, iv, po, order, date, insulin, prn, scale, sliding, ml, daily, hr, sc, drip, bid, tid, units, line, regular, doses</td>
+</tr>
+<tr>
+<td class="tg-ce01">50</td>
+<td class="tg-ce02">meningitis</td>
+<td class="tg-ce02">culture, blood, parent, meningitis, javascript, popup, webtag, lp, final, gram, acyclovir, pending, stain, csf, routine, inpatient, hsv, location, inary, gif</td>
+</tr>
+</table>
+
+#Application
+This is a web application for doctor to use. 
+It contain order input page and analysis result page. Result will automatically update every 12 hours.
+This system not just provide numeric data but also provide text imformation. 
+We hope it can observerd disease change during the ICU and help doctor to more understand patient, then make discussion more precisely.
+
+
+## Text input page
+- We show basic information of specific patient in the top bar.
+  Such as gender, age, bed loction and staytime in ICU. In the second bar, show care informations. Such as admission spas ii score, doctors and nures information.
+  Also have Precautions.  
+- At the bottom of page, doctors can type the physican order at there.
+- It cat link to MRI image pipline system by top right "MRI image" icon.
+
+```{r fig.width=10, fig.height=5,echo=FALSE}
+library(png)
+library(grid)
+img <- readPNG("D:\\Develop_code\\IPIR\\Text_LDA\\2_Slide\\picture\\demo_input.PNG")
+grid.raster(img)
+```
+
+
+
+##Analysis and visualization page
+- This page inherit patient's demographic data from text input page. Have analysis result at the bottom of page.
+```{r fig.width=10, fig.height=5,echo=FALSE}
+library(png)
+library(grid)
+img <- readPNG("D:\\Develop_code\\IPIR\\Text_LDA\\2_Slide\\picture\\demo_result.PNG")
+grid.raster(img)
+```
+
